@@ -4,7 +4,6 @@ use navigation::airport::Airport;
 use navigation::geographics::NavPoint;
 use navigation::flightplan::NavBranch;
 use navigation::aircraft::{self, Aircraft};
-use plotters::data::float;
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +20,7 @@ async fn main() {
     let (dist, course) = NavBranch::calculate_distance_and_course(&nav_start, &nav_end);
     println!("Distance : {} NM, course : {}°", dist.unwrap()*0.539957, course.unwrap());
 
-    println!("**** Mass and balance ****");
+    /*println!("**** Mass and balance ****");
     let balance = aircraft::BalanceChart {
         front_limit: 0.205,
         back_limit: 0.564,
@@ -31,10 +30,15 @@ async fn main() {
     };
     let mut max_weight: f64;
 
-    for i in (180..=580).map(|x| x as f64 * 0.001) {
-        max_weight = aircraft::max_allowed_weight(balance.clone(), i);
-    }
+    aircraft::plot_max_allowed_weight_curve(balance, Some(840.0), Some(0.51)).unwrap();
+*/
 
-    aircraft::plot_max_allowed_weight_curve(balance, Some(890.0), Some(0.208)).unwrap();
+    let cg = Aircraft::import("F-HFCG".into()).unwrap();
+    let rv = Aircraft::import("F-HARV".into()).unwrap();
+    println!("Aircraft : {:?}", cg);
+    println!("Aircraft : {:?}", rv);
+
+    cg.plot_max_allowed_weight_curve(Some(870.0), Some(0.51)).unwrap();
+    rv.plot_max_allowed_weight_curve(Some(920.0), Some(0.48)).unwrap();
 
 }

@@ -1,7 +1,6 @@
-use std::error::{self, Error};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::ops::Deref;
+use super::error::ParseError;
 
 #[derive(Debug)]
 pub enum AirportType {
@@ -12,17 +11,7 @@ pub enum AirportType {
     closed,
     unknown,
 }
-#[derive(thiserror::Error, Debug)]
-pub enum ParseError {
-    #[error("File not found")]
-    file_not_found,
-    #[error("Wrong file format")]
-    wrong_format,
-    #[error("Field not found")]
-    field_not_found,
-    #[error("Unknown error")]
-    unknown_error,
-}
+
 
 #[derive(Debug)]
 pub struct Airport {
