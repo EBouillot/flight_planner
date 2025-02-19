@@ -1,6 +1,8 @@
+use super::error::ParseError;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use super::error::ParseError;
+use rusqlite::Connection;
+use super::database;
 
 #[derive(Debug)]
 pub enum AirportType {
@@ -12,7 +14,6 @@ pub enum AirportType {
     unknown,
 }
 
-
 #[derive(Debug)]
 pub struct Airport {
     pub oaci_code: String,
@@ -23,7 +24,13 @@ pub struct Airport {
 }
 
 impl Airport {
-    pub fn new(oaci_code: String, name: String, airport_type: AirportType, latitude: f64, longitude: f64) -> Airport {
+    pub fn new(
+        oaci_code: String,
+        name: String,
+        airport_type: AirportType,
+        latitude: f64,
+        longitude: f64,
+    ) -> Airport {
         Airport {
             oaci_code,
             name,
@@ -33,35 +40,30 @@ impl Airport {
         }
     }
 
-    pub fn from_oaci_code(oaci_code: &str) -> Result<Airport, ParseError> {
-        Self::from_csv("../../fr-airports.csv", oaci_code)
+    pub fn from_oaci_code(oaci_code: &str) -> Result<Airport, rusqlite::Error> {
+        Self::from_db("../../data/airports.db", oaci_code)?
+            .pop().ok_or(rusqlite::Error::QueryReturnedNoRows)
     }
 
-    fn from_csv(file_path: &str, ident: &str) -> Result<Airport, ParseError> {
-        let file = File::open(file_path).map_err(|_| ParseError::file_not_found)?;
-        let reader = BufReader::new(file);
+    fn airport_mapper(row: &rusqlite::Row) -> rusqlite::Result<Airport> {
+        Ok(Airport {
+            oaci_code: row.get(0)?,
+            name: row.get(1)?,
+            airport_type: match row.get::<_, String>(2)?.as_str() {
+                "small_airport" => AirportType::small_airport,
+                "medium_airport" => AirportType::medium_airport,
+                "large_airport" => AirportType::large_airport,
+                "helliport" => AirportType::helliport,
+                "closed" => AirportType::closed,
+                _ => AirportType::unknown,
+            },
+            latitude: row.get(3)?,
+            longitude: row.get(4)?,
+        })
+    }
 
-        for line in reader.lines() {
-            let line = line.map_err(|_| ParseError::unknown_error)?;
-            let fields: Vec<&str> = line.split(',').collect();
-
-            if fields[1] == ident {
-                let oaci_code = fields[1].to_string();
-                let name = fields[3].to_string();
-                let airport_type = match fields[2] {
-                    "small_airport" => AirportType::small_airport,
-                    "medium_airport" => AirportType::medium_airport,
-                    "large_airport" => AirportType::large_airport,
-                    "helliport" => AirportType::helliport,
-                    "closed" => AirportType::closed,
-                    _ => AirportType::unknown,
-                };
-                let latitude = fields[4].parse::<f64>().map_err(|_| ParseError::wrong_format)?;
-                let longitude = fields[5].parse::<f64>().map_err(|_| ParseError::wrong_format)?;
-                return Ok(Airport::new(oaci_code, name, airport_type, latitude, longitude));
-            }
-        }
-
-        Err(ParseError::field_not_found)
+    pub fn from_db(db_path: &str, ident: &str) -> Result<Vec<Airport>, rusqlite::Error> {
+        database::parse_database(db_path, "airports", "ident", ident, "ident, name, type, latitude_deg, longitude_deg", Self::airport_mapper)
+        
     }
 }

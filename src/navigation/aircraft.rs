@@ -2,8 +2,7 @@ use std::{
     collections::HashMap, error::Error, fs::File, io::{BufRead, BufReader}, path
 };
 use super::{
-    error::ParseError,
-    fuel::{self, Fuel},
+    database::{self, parse_database}, error::ParseError, fuel::Fuel
 };
 
 
@@ -22,8 +21,11 @@ pub struct Aircraft {
     pub cruise_speed: f64,
     pub fuel: Fuel,
     pub consomatation: f64,
-    pub tank: i32,
+    pub nb_tank: i32,
+    pub total_tank: i32,
+    pub empty_weight: f64,
     pub balance_chart: BalanceChart,
+    pub loading: HashMap<String, f64>,
 }
 #[derive(Debug, Clone)]
 pub struct BalanceCat {
@@ -53,6 +55,43 @@ pub struct BalanceChart {
     pub catA: BalanceCat, //Acrobatic operation
 }
 
+impl BalanceChart {
+    fn balance_mapper(row: &rusqlite::Row) -> rusqlite::Result<BalanceChart> {
+        Ok(BalanceChart {
+            catN: BalanceCat {
+                front_limit: row.get(0)?,
+                back_limit: row.get(1)?,
+                stab: row.get(2)?,
+                mindless_weight: row.get(3)?,
+                max_weight: row.get(4)?,
+            },
+            catU: BalanceCat {
+                front_limit: row.get(5)?,
+                back_limit: row.get(6)?,
+                stab: row.get(7)?,
+                mindless_weight: row.get(8)?,
+                max_weight: row.get(9)?,
+            },
+            catA: BalanceCat {
+                front_limit: row.get(10)?,
+                back_limit: row.get(11)?,
+                stab: row.get(12)?,
+                mindless_weight: row.get(13)?,
+                max_weight: row.get(14)?,
+            },
+        })
+    }
+
+    pub fn from_database(database: &str, immatriculation: &str) -> Result<Vec<BalanceChart>, rusqlite::Error> {
+        parse_database(&database, "balance_chart", "aircraft", &immatriculation, 
+        "front_limit_N, back_limit_N, stab_N, mindless_weight_N, max_weight_N,
+        front_limit_U, back_limit_U, stab_U, mindless_weight_U, max_weight_U,
+        front_limit_A, back_limit_A, stab_A, mindless_weight_A, max_weight_A",
+        Self::balance_mapper)
+    }
+
+}
+
 #[derive(Debug, Clone)]
 pub struct BalanceSheet {
     pub elements: HashMap<String, Balance>,
@@ -71,6 +110,10 @@ impl BalanceSheet {
             arm: arm,
             moment: weight * arm,
         });
+    }
+
+    pub fn total_weight(&self) -> f64 {
+        self.elements.values().map(|b| b.weigth).sum()
     }
 }
 
@@ -91,7 +134,7 @@ use plotters::{prelude::*, style::full_palette::{LIGHTBLUE, ORANGE, ORANGE_400}}
 
 
 impl Aircraft {
-    pub fn new(immatriculation: String, aircraft_type: String, horse_power: i32, cruise_speed: f64, fuel: Fuel, consomatation: f64, tank: i32, balance_chart: BalanceChart) -> Aircraft {
+    pub fn new(immatriculation: String, aircraft_type: String, horse_power: i32, cruise_speed: f64, fuel: Fuel, consomatation: f64, nb_tank: i32, total_tank: i32, empty_weight: f64, balance_chart: BalanceChart, loading: HashMap<String, f64>) -> Aircraft {
         Aircraft {
             immatriculation,
             aircraft_type,
@@ -99,85 +142,60 @@ impl Aircraft {
             cruise_speed,
             fuel,
             consomatation,
-            tank,
+            nb_tank,
+            total_tank,
+            empty_weight,
             balance_chart,
+            loading,
         }
     }
 
-    pub fn import(immatriculation: String) -> Result<Aircraft, ParseError> {
-        Aircraft::from_csv("../../aircrafts.csv", &immatriculation)
-
-    }
-    pub fn from_csv(file_name: &str, name: &str) -> Result<Aircraft, ParseError>{
-        println!("*** DEBUG  : file_name : {}, name : {}", file_name, name);
-        let file = File::open(file_name).map_err(|_| ParseError::file_not_found)?;
-        let reader = BufReader::new(file);
-
-        let mut immat: String = String::new();
-        let mut aircraft_type: String = String::new();
-        let mut horse_power: i32 = 0;
-        let mut cruise_speed: f64 = 0.0;
-        let mut fuel: Fuel = Fuel::AVGAS100LL;
-        let mut conso: f64 = 0.0;
-        let mut tank: i32 = 0;
-        let mut cat_n = BalanceCat::new();
-        let mut cat_u = BalanceCat::new();
-        let mut cat_a = BalanceCat::new();
-        let mut balance_chart = BalanceChart {
-            catN: cat_n,
-            catU: cat_u,
-            catA: cat_a,
-        };
-
-        for line in reader.lines() {
-            let line = line.map_err(|_| ParseError::unknown_error)?;
-            let fields: Vec<&str> = line.split(',').collect();
-
-            if fields[0] == name {
-                println!("Found aircraft : {}", name);
-                println!("Fields : {:?}", fields);
-                immat = fields[0].to_string();
-                aircraft_type = fields[1].to_string();
-                horse_power = fields[2].parse::<i32>().map_err(|_| ParseError::wrong_format)?;
-                cruise_speed = fields[3].parse::<f64>().map_err(|_| ParseError::wrong_format)?;
-                fuel = match fields[4] {
-                    "AVGAS100LL" => Fuel::AVGAS100LL,
-                    "AVGAS100" => Fuel::AVGAS100,
-                    "AVGAS82" => Fuel::AVGAS82,
-                    "AVGAS80" => Fuel::AVGAS80,
-                    "JET_A" => Fuel::JET_A,
-                    "JET_A1" => Fuel::JET_A1,
-                    "JET_B" => Fuel::JET_B,
-                    "MOGAS" => Fuel::MOGAS,
-                    _ => Fuel::AVGAS100LL,
-                };
-                conso = fields[5].parse::<f64>().map_err(|_| ParseError::wrong_format)?;
-                tank = fields[6].parse::<i32>().map_err(|_| ParseError::wrong_format)?;
-                balance_chart.catN = BalanceCat {
-                    front_limit: fields[7].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    back_limit: fields[8].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    stab: fields[9].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    mindless_weight: fields[10].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    max_weight: fields[11].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                };
-                balance_chart.catU = BalanceCat {
-                    front_limit: fields[12].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    back_limit: fields[13].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    stab: fields[14].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    mindless_weight: fields[15].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    max_weight: fields[16].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                };
-                balance_chart.catA = BalanceCat {
-                    front_limit: fields[17].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    back_limit: fields[18].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    stab: fields[19].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    mindless_weight: fields[20].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                    max_weight: fields[21].parse::<f64>().map_err(|_| ParseError::wrong_format)?,
-                };
-            }
+    pub fn import(immatriculation: &str) -> Result<Aircraft, rusqlite::Error> {
+        let mut plane = Aircraft::from_database("../../data/airports.db", immatriculation)?.pop().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+        let mut balance = BalanceChart::from_database("../../data/airports.db", immatriculation)?;
+        if !balance.is_empty() {
+            plane.balance_chart = balance.pop().unwrap();
         }
-        Ok (Aircraft::new(immat, aircraft_type, horse_power, cruise_speed, fuel, conso, tank, balance_chart))
+        Ok(plane)
     }
+
+
+    
+    fn aircraft_mapper(row: &rusqlite::Row) -> rusqlite::Result<Aircraft> {
+        Ok(Aircraft {
+            immatriculation: row.get(0)?,
+            aircraft_type: row.get(1)?,
+            horse_power: row.get(2)?,
+            cruise_speed: row.get(3)?,
+            fuel: match row.get::<_, String>(4)?.as_str() {
+                "AVGAS100LL" => Fuel::AVGAS100LL,
+                "AVGAS100" => Fuel::AVGAS100,
+                "AVGAS82" => Fuel::AVGAS82,
+                "AVGAS80" => Fuel::AVGAS80,
+                "JET_A" => Fuel::JET_A,
+                "JET_A1" => Fuel::JET_A1,
+                "JET_B" => Fuel::JET_B,
+                "MOGAS" => Fuel::MOGAS,
+                _ => Fuel::AVGAS100LL,
+            },
+            consomatation: row.get(5)?,
+            nb_tank: row.get(6)?,
+            total_tank: row.get(7)?,
+            empty_weight: row.get(8)?,
+            balance_chart: BalanceChart {
+                catN: BalanceCat::new(),
+                catU: BalanceCat::new(),
+                catA: BalanceCat::new(),
+            },
+            loading: HashMap::new(),
+        })
+    }
+
+    pub fn from_database(database: &str, immatriculation: &str) -> Result<Vec<Aircraft>, rusqlite::Error> {
+        parse_database(&database, "aircrafts", "immat", &immatriculation, 
+        "immat, type, horse_power, cruise_speed, fuel, conso, nb_tank, total_tank, empty_weight", Self::aircraft_mapper)
+    }
+
 
     pub fn plot_max_allowed_weight_curve(&self, plane_weight: Option<f64>, plane_arm: Option<f64>) -> Result<(), Box<dyn Error>> {
         let file_name = format!("{}.png", self.immatriculation);
@@ -233,11 +251,11 @@ impl Aircraft {
             if weight < max_allowed_weight(self.balance_chart.catA.clone(), arm) {
                 color = &LIGHTBLUE;
             } 
-            else if weight < max_allowed_weight(self.balance_chart.catN.clone(), arm) {
+            else if weight < max_allowed_weight(self.balance_chart.catU.clone(), arm) {
                 println!("Weight {} at arm {} is within the envelope", weight, arm);
-                color = &ORANGE_400;
-            } else if weight < max_allowed_weight(self.balance_chart.catU.clone(), arm) {
                 color = &GREEN;
+            } else if weight < max_allowed_weight(self.balance_chart.catN.clone(), arm) {
+                color = &ORANGE_400;
             } else {
                 println!("Weight {} at arm {} is outside the envelope", weight, arm);
             }
@@ -251,4 +269,3 @@ impl Aircraft {
         Ok(())
     }
 }
-

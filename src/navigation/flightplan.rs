@@ -1,6 +1,6 @@
+use super::geographics::NavPoint;
 use reqwest::Error;
 use serde::Deserialize;
-use super::geographics::NavPoint;
 
 pub struct Wind {
     pub speed: f64,
@@ -43,7 +43,15 @@ pub struct NavBranch {
 /// let nav_branch = NavBranch::new(from, to, None, None, wind, 5.0, 100.0);
 /// ```
 impl NavBranch {
-    pub fn new(from: Option<NavPoint>, to: Option<NavPoint>, distance: Option<f64>, course: Option<f64>, wind: Wind, time: f64, fuel: f64) -> NavBranch {
+    pub fn new(
+        from: Option<NavPoint>,
+        to: Option<NavPoint>,
+        distance: Option<f64>,
+        course: Option<f64>,
+        wind: Wind,
+        time: f64,
+        fuel: f64,
+    ) -> NavBranch {
         let (calculated_distance, calculated_course) = if distance.is_none() || course.is_none() {
             if let (Some(from), Some(to)) = (&from, &to) {
                 Self::calculate_distance_and_course(from, to)
@@ -65,7 +73,10 @@ impl NavBranch {
         }
     }
 
-    pub fn calculate_distance_and_course(from: &NavPoint, to: &NavPoint) -> (Option<f64>, Option<f64>) {
+    pub fn calculate_distance_and_course(
+        from: &NavPoint,
+        to: &NavPoint,
+    ) -> (Option<f64>, Option<f64>) {
         let lat1 = from.latitude.to_radians();
         let lon1 = from.longitude.to_radians();
         let lat2 = to.latitude.to_radians();
@@ -93,4 +104,3 @@ pub struct Aircraft {
     pub weight: f64,
     pub cruise_speed: f64,
 }
-
