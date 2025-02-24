@@ -1,10 +1,5 @@
 mod navigation;
-use navigation::aircraft::{self, Aircraft, BalanceChart};
-use navigation::airport::Airport;
-use navigation::flightplan::NavBranch;
-use navigation::geographics::NavPoint;
-use navigation::database;
-use serde::de::value::U128Deserializer;
+use navigation::{aircraft::Aircraft, airport::Airport, flightplan::NavBranch, geographics::{NavPoint, calculate_distance_and_course}};
 
 #[tokio::main]
 async fn main() {
@@ -24,21 +19,26 @@ async fn main() {
     let nav_start = NavPoint::new("lfpz".to_string(), stcyr.latitude, stcyr.longitude);
     let nav_end = NavPoint::new("lfpn".to_string(), toussus.latitude, toussus.longitude);
 
-    let (dist, course) = NavBranch::calculate_distance_and_course(&nav_start, &nav_end);
+    let (dist, course) = calculate_distance_and_course(&nav_start, &nav_end);
     println!(
         "Distance : {} NM, course : {}°",
         dist.unwrap() * 0.539957,
         course.unwrap()
     );
 
-    let cg = Aircraft::import("F-HFCG").unwrap();
+    let mut cg = Aircraft::import("F-HFCG").unwrap();
     let rv = Aircraft::import("F-HARV").unwrap();
-    println!("Aircraft : {:?}", cg);
-    println!("Aircraft : {:?}", rv);
 
-    cg.plot_max_allowed_weight_curve(Some(870.0), Some(0.51))
-        .unwrap();
-    rv.plot_max_allowed_weight_curve(Some(920.0), Some(0.48))
+    if let Err(e) = cg.load_fuel(110.0) {
+        eprintln!("Error loading fuel: {}", e);
+    }
+    cg.load_crew(150.0);
+    cg.load_passengers(0.0);
+    cg.load_lugguage(0.0);
+
+    println!("Aircraft : {:?}", cg);
+
+    cg.plot_max_allowed_weight_curve(Some(cg.loading.total_weight()), Some(cg.loading.center_of_gravity()))
         .unwrap();
 
 

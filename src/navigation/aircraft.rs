@@ -1,8 +1,8 @@
 use std::{
-    collections::HashMap, error::Error, fs::File, io::{BufRead, BufReader}, path
+    collections::HashMap, error::Error, path
 };
 use super::{
-    database::{self, parse_database}, error::ParseError, fuel::Fuel
+    database::{self, parse_database}, error::BalanceError, fuel::{self, Fuel}
 };
 
 
@@ -25,7 +25,7 @@ pub struct Aircraft {
     pub total_tank: i32,
     pub empty_weight: f64,
     pub balance_chart: BalanceChart,
-    pub loading: HashMap<String, f64>,
+    pub loading: BalanceSheet,
 }
 #[derive(Debug, Clone)]
 pub struct BalanceCat {
@@ -93,9 +93,16 @@ impl BalanceChart {
 }
 
 #[derive(Debug, Clone)]
-pub struct BalanceSheet {
-    pub elements: HashMap<String, Balance>,
+pub struct BalanceElement {
+    pub arm: f64,
+    pub weight: f64,
 }
+
+#[derive(Debug, Clone)]
+pub struct BalanceSheet {
+    pub elements: HashMap<String, BalanceElement>,
+}
+
 
 impl BalanceSheet {
     pub fn new() -> BalanceSheet {
@@ -104,16 +111,49 @@ impl BalanceSheet {
         }
     }
 
-    pub fn load(&mut self, name: String, weight: f64, arm: f64) {
-        self.elements.insert(name, Balance {
-            weigth: weight,
-            arm: arm,
-            moment: weight * arm,
-        });
+    pub fn load(&mut self, name: String,  weight: f64) -> Result<(), BalanceError> {
+        if self.elements.get(&name).is_some() {
+            if let Some(element) = self.elements.get_mut(&name) {
+                element.weight = weight;
+                Ok(())
+            } else {
+                Err(BalanceError::not_in_balance)
+            }
+        } else {
+            Err(BalanceError::not_in_balance)
+        }
     }
 
     pub fn total_weight(&self) -> f64 {
-        self.elements.values().map(|b| b.weigth).sum()
+        self.elements.values().map(|b| b.weight).sum()
+    }
+
+    pub fn total_moment(&self) -> f64 {
+        self.elements.iter().map(|(name, b)| b.weight * b.arm).sum()
+    }
+
+    pub fn center_of_gravity(&self) -> f64 {
+        self.total_moment() / self.total_weight()
+    }
+
+    fn weight_mapper(row: &rusqlite::Row) -> rusqlite::Result<BalanceSheet> {
+        let mut elements = HashMap::new();
+        elements.insert("Empty".to_string(), BalanceElement{ arm: row.get(0)?, weight: 0.0});
+        elements.insert("PIL".to_string(), BalanceElement{ arm: row.get(1)?, weight: 0.0});
+        elements.insert("PAX".to_string(), BalanceElement{ arm: row.get(2)?, weight: 0.0});
+        elements.insert("cargo".to_string(), BalanceElement{ arm: row.get(3)?, weight: 0.0});
+        elements.insert("tank".to_string(), BalanceElement{ arm: row.get(4)?, weight: 0.0});
+        elements.insert("tank2".to_string(), BalanceElement{ arm: row.get(5)?, weight: 0.0});
+        elements.insert("tank3".to_string(), BalanceElement{ arm: row.get(6)?, weight: 0.0});
+        Ok(BalanceSheet {
+            elements,
+        })
+    }
+
+    pub fn from_database(database: &str, immatriculation: &str) -> Result<Vec<BalanceSheet>, rusqlite::Error> {
+        parse_database(&database, "weight_sheet", "Aircraft", &immatriculation, 
+        "Empty, PIL, PAX, cargo, tank, tank2, tank3", Self::weight_mapper)
+
     }
 }
 
@@ -129,12 +169,12 @@ pub fn max_allowed_weight(balance: BalanceCat, arm: f64) -> f64{
     max_allowed_weight
 }
 
-use plotters::{prelude::*, style::full_palette::{LIGHTBLUE, ORANGE, ORANGE_400}};
+use plotters::{prelude::*, style::full_palette::{LIGHTBLUE, ORANGE_400}};
 
 
 
 impl Aircraft {
-    pub fn new(immatriculation: String, aircraft_type: String, horse_power: i32, cruise_speed: f64, fuel: Fuel, consomatation: f64, nb_tank: i32, total_tank: i32, empty_weight: f64, balance_chart: BalanceChart, loading: HashMap<String, f64>) -> Aircraft {
+    pub fn new(immatriculation: String, aircraft_type: String, horse_power: i32, cruise_speed: f64, fuel: Fuel, consomatation: f64, nb_tank: i32, total_tank: i32, empty_weight: f64, balance_chart: BalanceChart, loading: BalanceSheet) -> Aircraft {
         Aircraft {
             immatriculation,
             aircraft_type,
@@ -153,6 +193,12 @@ impl Aircraft {
     pub fn import(immatriculation: &str) -> Result<Aircraft, rusqlite::Error> {
         let mut plane = Aircraft::from_database("../../data/airports.db", immatriculation)?.pop().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
         let mut balance = BalanceChart::from_database("../../data/airports.db", immatriculation)?;
+        let mut weight = BalanceSheet::from_database("../../data/airports.db", immatriculation)?;
+        if !weight.is_empty() {
+            plane.loading = weight.pop().unwrap();
+            plane.loading.load("Empty".to_string(), plane.empty_weight).unwrap();
+
+        }
         if !balance.is_empty() {
             plane.balance_chart = balance.pop().unwrap();
         }
@@ -187,7 +233,7 @@ impl Aircraft {
                 catU: BalanceCat::new(),
                 catA: BalanceCat::new(),
             },
-            loading: HashMap::new(),
+            loading: BalanceSheet::new(),
         })
     }
 
@@ -196,7 +242,33 @@ impl Aircraft {
         "immat, type, horse_power, cruise_speed, fuel, conso, nb_tank, total_tank, empty_weight", Self::aircraft_mapper)
     }
 
+    pub fn load_fuel(&mut self, quantity: f64) -> Result<(), BalanceError> {
+        if self.total_tank < quantity as i32 {
+            return Err(BalanceError::tank_capacity_exceeded(self.total_tank));
+        }
+        let fuel_weight = quantity * self.fuel.properties().density;
+        self.loading.load("tank".to_string(), fuel_weight)?;
+        Ok(())
+    }
 
+    pub fn load_crew(&mut self, weight: f64) -> Result<(), BalanceError> {
+        self.loading.load("PIL".to_string(), weight)?;
+        Ok(())
+    }
+
+    pub fn load_passengers(&mut self, weight: f64) -> Result<(), BalanceError> {
+        self.loading.load("PAX".to_string(), weight)?;
+        Ok(())
+    }
+
+    pub fn load_lugguage(&mut self, weight: f64) -> Result<(), BalanceError> {
+        self.loading.load("cargo".to_string(), weight)?;
+        Ok(())
+    }
+
+    /// Plot the maximum allowed weight curve for the aircraft
+    /// Leave plane_weight and plane_arm to None will only print the envelope
+    /// If plane_weight and plane_arm are provided, the calculated weight&balance will be plotted
     pub fn plot_max_allowed_weight_curve(&self, plane_weight: Option<f64>, plane_arm: Option<f64>) -> Result<(), Box<dyn Error>> {
         let file_name = format!("{}.png", self.immatriculation);
         let path = path::Path::new(&file_name);
