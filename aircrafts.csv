@@ -1,3 +1,0 @@
-callsign,type,HP,cruise speed,fuel,conso,tank,balance front_limit (N),balance back_limit (N),stab (N),mindless_weight (N),max_weight (N),balance front_limit (U),balance back_limit (U),stab (U),mindless_weight (U),max_weight (U),balance front_limit (A),balance back_limit (A),stab (U),mindless_weight (A),max_weight (A)
-F-HFCG,DR400,120,110,AVGAS100LL,25,110,0.205,0.564,0.428,750,900,0.205,0.564,0.428,750,900,0,0,0,0,0
-F-HARV,DR400,130,120,JET_A1,20,110,0.205,0.564,0.41,720,980,0.205,0.564,0.428,720,910,0,0,0,0,0

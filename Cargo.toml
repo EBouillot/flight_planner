@@ -6,7 +6,12 @@ edition = "2021"
 [dependencies]
 reqwest = { version = "0.12.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0.218", features = ["derive"] }
 thiserror = "2.0.11"
 plotters = "0.3"
 rusqlite = { version = "0.33.0", features = ["bundled"] }
+slint = "1.9.2"
+config = "0.15.8"
+
+[build-dependencies]
+slint-build = "1.9.0"

@@ -1,0 +1,17 @@
+import { VerticalBox, Button } from "std-widgets.slint";
+export component Balance {
+    in-out property <int> current-item: 1;
+    VerticalBox {
+        Image {
+            source: @image-url("../assets/balance/F-HARV.png");
+        }
+        back := Button {
+            text: "Back";
+            width: 100px;
+            height: 50px;
+            clicked => {
+                root.current-item = 0;
+            }
+        }
+    }
+}

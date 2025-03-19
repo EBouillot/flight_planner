@@ -1,0 +1,41 @@
+import { Button, LineEdit, VerticalBox, HorizontalBox, GridBox, TabWidget } from "std-widgets.slint";
+import { MainMenu, MainMenuView } from "views/main_menu.slint";
+import { Balance } from "views/balance.slint";
+export struct AircraftView {
+    name: string,
+    aircraft_type: string,
+    power: int,    
+}
+
+export component MainWindow inherits Window {
+    
+    title: "Flight Planner";
+    width: 800px;
+    height: 600px;
+    background: @linear-gradient(180deg, #6ac0e6 0%, #ebf8e1 50%, #796045 100%);
+
+    out property <int> current-item: 0; // 0: main menu, 1: balance
+    in-out property <[string]> aircraft_list;
+    out property <string> aircraft_name;
+    in property <AircraftView> aircraft;
+    in-out property <string> selected_aircraft;
+
+
+
+    callback select_aircraft();
+    callback balance();
+    callback aircraft_changed();
+
+    if(root.current-item == 0) : MainMenuView {
+        current-item <=> root.current-item;
+        aircraft_list <=> root.aircraft_list;
+        selected_aircraft <=> root.selected_aircraft;
+        aircraft_changed => {root.aircraft_changed();}
+        balance_call => {root.balance();}
+    }
+    if (root.current-item == 1) : Balance {
+        width: 100%;
+        height: 100%;
+        current-item <=> root.current-item;
+    }
+}

@@ -1,6 +1,6 @@
 mod navigation;
-use navigation::{aircraft::Aircraft, airport::Airport, flightplan::NavBranch, geographics::{NavPoint, calculate_distance_and_course}};
-
+use navigation::{database, aircraft::{self, Aircraft}, airport::Airport, flightplan::NavBranch, geographics::{calculate_distance_and_course, NavPoint}};
+/*
 #[tokio::main]
 async fn main() {
     let stcyr = Airport::from_oaci_code("LFPZ").unwrap();
@@ -42,4 +42,59 @@ async fn main() {
         .unwrap();
 
 
+}*/
+
+slint::include_modules!();
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use slint::{ModelRc, SharedString, VecModel};
+
+
+fn main () {
+    let main_window = MainWindow::new().unwrap();
+    let list_aircraft = database::list_entries("../../data/airports.db", "aircrafts", "immat").unwrap();
+    let aircraft_shrd: Vec<SharedString> = list_aircraft.into_iter().map(SharedString::from).collect();
+    let aircraft_model = ModelRc::new(VecModel::from(aircraft_shrd.clone()));
+    main_window.set_aircraft_list(aircraft_model);
+    let main_window_weak = main_window.as_weak();
+
+    let aircraft_view = Rc::new(RefCell::new(main_window.get_aircraft()));
+    if let Some(first_aircraft) = aircraft_shrd.first() {
+        main_window.set_selected_aircraft(first_aircraft.clone());
+    }
+    let aircraft = Aircraft::import(&main_window.get_selected_aircraft()).unwrap();
+
+    main_window.on_aircraft_changed(move || {
+        println!("Aircraft changed");
+        let new_aircraft = main_window_weak.unwrap().get_selected_aircraft();
+        println!("Selected Aircraft: {:?}", new_aircraft);
+    });
+    
+    let main_window_weak = main_window.as_weak();
+    main_window.on_balance(move || {
+        println!("Balance clicked");
+        let toto = Aircraft::import(&main_window_weak.unwrap().get_selected_aircraft()).unwrap();
+        
+        
+    });
+
+
+    
+/*
+    main_window.on_select_aircraft(move || {
+        let main_window = main_window_weak.unwrap();
+        let txt = main_window.get_aircraft_name();
+        println!("Selected Aircraft: {}", txt);
+        let aircraft = Aircraft::import(&txt).unwrap();
+        println!("Aircraft data : {:?}", aircraft);
+        let mut aircraft_view_mut = aircraft_view.borrow_mut();
+        aircraft_view_mut.name = aircraft.immatriculation.into();
+        aircraft_view_mut.power = aircraft.horse_power;
+        aircraft_view_mut.aircraft_type = aircraft.aircraft_type.into();
+        main_window.set_aircraft(aircraft_view_mut.clone());
+}));
+*/
+
+    main_window.run().unwrap();
 }

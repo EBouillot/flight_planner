@@ -1,10 +1,16 @@
-use super::geographics::NavPoint;
+use super::geographics::{NavPoint, calculate_distance_and_course};
 use reqwest::Error;
 use serde::Deserialize;
 
 pub struct Wind {
     pub speed: f64,
     pub direction: f64,
+}
+
+pub struct Navigation {
+    pub start: NavPoint,
+    pub end: NavPoint,
+    pub branches: Vec<NavBranch>,
 }
 pub struct NavBranch {
     pub from: Option<NavPoint>,
@@ -13,7 +19,6 @@ pub struct NavBranch {
     pub course: Option<f64>,
     pub wind: Wind,
     pub time: f64,
-    pub fuel: f64,
 }
 
 /// Creates a new `NavBranch` instance.
@@ -50,11 +55,10 @@ impl NavBranch {
         course: Option<f64>,
         wind: Wind,
         time: f64,
-        fuel: f64,
     ) -> NavBranch {
         let (calculated_distance, calculated_course) = if distance.is_none() || course.is_none() {
             if let (Some(from), Some(to)) = (&from, &to) {
-                Self::calculate_distance_and_course(from, to)
+                calculate_distance_and_course(from, to)
             } else {
                 (None, None)
             }
@@ -69,38 +73,6 @@ impl NavBranch {
             course: course.or(calculated_course),
             wind,
             time,
-            fuel,
         }
     }
-
-    pub fn calculate_distance_and_course(
-        from: &NavPoint,
-        to: &NavPoint,
-    ) -> (Option<f64>, Option<f64>) {
-        let lat1 = from.latitude.to_radians();
-        let lon1 = from.longitude.to_radians();
-        let lat2 = to.latitude.to_radians();
-        let lon2 = to.longitude.to_radians();
-
-        let dlat = lat2 - lat1;
-        let dlon = lon2 - lon1;
-
-        let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
-        let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-
-        let earth_radius_km = 6371.0;
-        let calculated_distance = earth_radius_km * c;
-
-        let y = dlon.sin() * lat2.cos();
-        let x = lat1.cos() * lat2.sin() - lat1.sin() * lat2.cos() * dlon.cos();
-        let calculated_course = y.atan2(x).to_degrees();
-
-        (Some(calculated_distance), Some(calculated_course))
-    }
-}
-
-pub struct Aircraft {
-    pub aircraft_type: String,
-    pub weight: f64,
-    pub cruise_speed: f64,
 }

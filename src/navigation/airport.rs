@@ -64,6 +64,5 @@ impl Airport {
 
     pub fn from_db(db_path: &str, ident: &str) -> Result<Vec<Airport>, rusqlite::Error> {
         database::parse_database(db_path, "airports", "ident", ident, "ident, name, type, latitude_deg, longitude_deg", Self::airport_mapper)
-        
     }
 }
